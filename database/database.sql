@@ -1,6 +1,3 @@
-CREATE DATABASE IF NOT EXISTS integrated_management_system;
-USE integrated_management_system;
-
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     full_name VARCHAR(120) NOT NULL,
