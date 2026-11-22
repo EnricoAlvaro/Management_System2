@@ -249,7 +249,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 app.use((error, req, res, next) => {
     console.error(error);
     if (res.headersSent) return next(error);
-    res.status(500).json({ message: 'Something went wrong. Check your database connection.' });
+    res.status(500).json({ message: `DB error: ${error.code || ''} ${error.message}` });
 });
 
 // Only listen when running locally. On Vercel the exported app is the handler.
