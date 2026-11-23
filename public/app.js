@@ -11,7 +11,7 @@ const peso = (amount) => '₱' + Number(amount || 0).toLocaleString('en-PH', { m
 const safe = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
 async function api(url, options = {}) {
-    const settings = { credentials: 'include', ...options, headers: { ...(options.headers || {}) } };
+    const settings = { ...options, headers: { ...(options.headers || {}) } };
     if (settings.body && typeof settings.body !== 'string') {
         settings.headers['Content-Type'] = 'application/json';
         settings.body = JSON.stringify(settings.body);
@@ -64,7 +64,7 @@ function openPage(pageName) {
     document.querySelectorAll('.page').forEach((page) => page.classList.add('hidden'));
     $(pageName).classList.remove('hidden');
     document.querySelectorAll('.nav-button').forEach((button) => button.classList.toggle('active', button.dataset.page === pageName));
-    const headings = { dashboard: 'Dashboard', reservations: 'Reservations', sales: 'Sales / POS', inventory: 'Inventory', vegetables: 'Vegetable Inventory', reports: 'Reports', users: 'User Management' };
+    const headings = { dashboard: 'Dashboard', reservations: 'Reservations', sales: 'Sales / POS', inventory: 'Inventory', reports: 'Reports', users: 'User Management' };
     $('pageHeading').textContent = headings[pageName];
     loadPageData(pageName).catch((error) => showMessage(error.message, true));
 }
@@ -74,7 +74,6 @@ async function loadPageData(pageName) {
     if (pageName === 'reservations') await loadReservations();
     if (pageName === 'sales') await loadSales();
     if (pageName === 'inventory') await loadInventory();
-    if (pageName === 'vegetables') await loadVegetables();
     if (pageName === 'reports') await loadReport();
     if (pageName === 'users') await loadUsers();
 }
@@ -293,115 +292,6 @@ document.addEventListener('click', async (event) => {
         try { await api(`/api/inventory/${deleteInventory}`, { method: 'DELETE' }); showMessage('Inventory item deleted.'); await loadInventory(); await loadDashboard(); }
         catch (error) { showMessage(error.message, true); }
     }
-});
-
-
-
-// VEGETABLE INVENTORY MODULE
-let vegetableData = { vegetables: [], batches: [], alerts: [] };
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const qtyText = (value, unit) => `${Number(value || 0).toFixed(3)} ${safe(unit || '')}`;
-
-async function loadVegetables() {
-    vegetableData = await api('/api/vegetables');
-    const options = vegetableData.vegetables.map(v => `<option value="${v.id}">${safe(v.name)} (${safe(v.base_unit)})</option>`).join('');
-    ['deliveryVegetable', 'useVegetable', 'wasteVegetable'].forEach(id => {
-        const select = $(id);
-        const previous = select.value;
-        select.innerHTML = options || '<option value="">Add a vegetable to the catalog first</option>';
-        if (previous && [...select.options].some(option => option.value === previous)) select.value = previous;
-    });
-    renderVegetables();
-    await loadVegetableMovements();
-}
-
-function renderVegetables() {
-    const alerts = vegetableData.alerts || [];
-    const low = vegetableData.vegetables.filter(v => Number(v.usable_stock) <= Number(v.low_stock_level));
-    let alertHtml = alerts.map(a => `<div class="veg-alert ${a.alert_type === 'Expired' ? 'expired' : ''}"><strong>${safe(a.alert_type)}:</strong> ${safe(a.vegetable_name || a.name)} — batch #${a.batch_id}, ${qtyText(a.quantity_remaining, a.base_unit)}, expiry ${safe(String(a.expiry_date).slice(0,10))}</div>`).join('');
-    alertHtml += low.map(v => `<div class="veg-alert"><strong>Low stock:</strong> ${safe(v.name)} — ${qtyText(v.usable_stock, v.base_unit)} available; reorder level ${qtyText(v.low_stock_level, v.base_unit)}</div>`).join('');
-    $('vegetableAlerts').innerHTML = alertHtml || '<div class="veg-alert ok">No low-stock or near-expiry alerts.</div>';
-
-    $('vegetableRows').innerHTML = vegetableData.vegetables.length ? vegetableData.vegetables.map(v => {
-        const isLow = Number(v.usable_stock) <= Number(v.low_stock_level);
-        return `<tr><td><strong>${safe(v.name)}</strong></td><td>${qtyText(v.usable_stock, v.base_unit)}</td><td>${qtyText(v.low_stock_level, v.base_unit)}</td><td><span class="status ${isLow ? 'warn' : 'good'}">${isLow ? 'Low stock' : 'In stock'}</span></td></tr>`;
-    }).join('') : '<tr><td colspan="4" class="empty-row">No vegetables yet. Add a vegetable using the catalog form.</td></tr>';
-
-    $('vegetableBatchRows').innerHTML = vegetableData.batches.length ? vegetableData.batches.map(b => {
-        const expired = String(b.expiry_date).slice(0,10) < todayISO();
-        return `<tr><td><strong>${safe(b.vegetable_name)}</strong></td><td>${safe(b.supplier_name || '—')}</td><td>${qtyText(b.quantity_remaining,b.base_unit)}</td><td>${safe(String(b.received_date).slice(0,10))}</td><td>${safe(String(b.expiry_date).slice(0,10))}</td><td><span class="status ${expired ? 'bad' : (b.is_opened ? 'warn' : 'good')}">${expired ? 'Expired' : (b.is_opened ? 'Cut / opened' : 'Unopened')}</span></td><td>${!b.is_opened && !expired ? `<button class="table-action" data-open-veg-batch="${b.id}">Mark opened</button>` : '—'}</td></tr>`;
-    }).join('') : '<tr><td colspan="7" class="empty-row">No delivery batches recorded.</td></tr>';
-}
-
-async function loadVegetableMovements() {
-    const rows = await api('/api/vegetables/movements');
-    $('vegetableMovementRows').innerHTML = rows.length ? rows.map(m => `<tr><td>${new Date(m.created_at).toLocaleString()}</td><td>${safe(m.vegetable_name)}</td><td>${safe(m.movement_type)}</td><td>${qtyText(m.quantity,m.base_unit)}</td><td>${safe(m.reason || '—')}</td><td>${safe(m.notes || '—')}</td></tr>`).join('') : '<tr><td colspan="6" class="empty-row">No vegetable movements recorded.</td></tr>';
-}
-
-$('vegetableCatalogForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    try {
-        await api('/api/vegetables/catalog', { method: 'POST', body: {
-            name: $('vegName').value, baseUnit: $('vegUnit').value,
-            lowStockLevel: $('vegLowStock').value, shelfLifeDays: $('vegShelfLife').value
-        }});
-        showMessage('Vegetable added to catalog.'); $('vegetableCatalogForm').reset();
-        $('vegLowStock').value = '1'; $('vegShelfLife').value = '5'; await loadVegetables();
-    } catch (error) { showMessage(error.message, true); }
-});
-
-$('vegDeliveryForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    try {
-        await api('/api/vegetables/deliveries', { method: 'POST', body: {
-            vegetableId: $('deliveryVegetable').value, supplierName: $('deliverySupplier').value,
-            quantity: $('deliveryQuantity').value, purchaseCost: $('deliveryCost').value,
-            receivedDate: $('deliveryReceived').value, expiryDate: $('deliveryExpiry').value,
-            notes: $('deliveryNotes').value
-        }});
-        showMessage('Delivery batch recorded.'); $('vegDeliveryForm').reset();
-        $('deliveryReceived').value = todayISO(); await loadVegetables();
-    } catch (error) { showMessage(error.message, true); }
-});
-
-$('vegUseForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    try {
-        const data = await api('/api/vegetables/use', { method: 'POST', body: {
-            vegetableId: $('useVegetable').value, quantity: $('useQuantity').value,
-            reason: $('useReason').value, openedExpiryDate: $('useOpenedExpiry').value || null,
-            notes: $('useNotes').value
-        }});
-        showMessage(`${data.message} Batch deductions: ${data.deductions.map(d => `#${d.batchId}: ${d.used} used, ${d.remaining} remaining`).join('; ')}`);
-        $('vegUseForm').reset(); $('useReason').value = 'Preparation'; await loadVegetables();
-    } catch (error) { showMessage(error.message, true); }
-});
-
-$('vegWasteForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    try {
-        await api('/api/vegetables/waste', { method: 'POST', body: {
-            vegetableId: $('wasteVegetable').value, quantity: $('wasteQuantity').value,
-            wasteType: $('wasteType').value, notes: $('wasteNotes').value
-        }});
-        showMessage('Vegetable waste recorded.'); $('vegWasteForm').reset(); await loadVegetables();
-    } catch (error) { showMessage(error.message, true); }
-});
-
-$('refreshVegetables').addEventListener('click', () => loadVegetables().catch(error => showMessage(error.message, true)));
-$('deliveryReceived').value = todayISO();
-
-document.addEventListener('click', async event => {
-    const batchId = event.target.dataset.openVegBatch;
-    if (!batchId) return;
-    const batch = vegetableData.batches.find(item => String(item.id) === String(batchId));
-    if (!batch) return;
-    const shortened = prompt(`Enter the new expiry date for the remaining ${batch.vegetable_name} (${batch.quantity_remaining} ${batch.base_unit}). Original expiry: ${String(batch.expiry_date).slice(0,10)}`, todayISO());
-    if (!shortened) return;
-    try {
-        await api(`/api/vegetables/batches/${batchId}/open`, { method: 'POST', body: { openedExpiryDate: shortened } });
-        showMessage('Batch marked as cut/opened. Remaining stock stays in inventory.'); await loadVegetables();
-    } catch (error) { showMessage(error.message, true); }
 });
 
 // Check whether the user already has an active session.
